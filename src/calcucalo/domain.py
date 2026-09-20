@@ -101,9 +101,11 @@ class AnalysisItem:
     bbox: BoundingBox
     polygons: list[list[list[int]]]
     portion: PortionEstimate
+    food: dict[str, Any] | None = None
+    component_of: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "class_id": self.class_id,
             "label": self.label,
             "detection_confidence": round(self.detection_confidence, 4),
@@ -111,6 +113,11 @@ class AnalysisItem:
             "mask_polygons": self.polygons,
             "portion": self.portion.to_dict(),
         }
+        if self.food is not None:
+            result["food"] = self.food
+        if self.component_of is not None:
+            result["component_of"] = self.component_of
+        return result
 
 
 @dataclass
@@ -126,6 +133,21 @@ class AnalysisResult:
             "image": {"width": self.image_width, "height": self.image_height},
             "calibration": self.calibration.to_dict() if self.calibration else None,
             "items": [item.to_dict() for item in self.items],
+            "foods": [item.food for item in self.items if item.food and not item.component_of],
             "warnings": self.warnings,
         }
 
+    def to_nutrition_dict(
+        self,
+        *,
+        compact: bool = True,
+        unwrap_single: bool = True,
+    ) -> dict[str, Any]:
+        from .nutrition import NutritionCatalog
+
+        foods = [item.food for item in self.items if item.food and not item.component_of]
+        if compact:
+            foods = [NutritionCatalog.compact(food) for food in foods]
+        if unwrap_single and len(foods) == 1:
+            return foods[0]
+        return {"foods": foods, "warnings": self.warnings}

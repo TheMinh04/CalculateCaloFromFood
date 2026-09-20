@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from .analyzer import FoodImageAnalyzer
 from .dataset import prepare_vietfood67
 from .detector import create_detector
 from .image_io import load_rgb_image
+from .nutrition import NutritionCatalog
 from .portion import PortionEstimator
 from .segmenter import create_segmenter
 from .visualize import save_overlay
@@ -15,6 +17,7 @@ from .visualize import save_overlay
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PRIORS = PROJECT_ROOT / "configs" / "portion_priors.yaml"
 DEFAULT_CLASSES = PROJECT_ROOT / "configs" / "vietfood67_classes.yaml"
+DEFAULT_CATALOG = PROJECT_ROOT / "configs" / "food_catalog.json"
 
 
 def _device(value: str) -> str | int:
@@ -32,14 +35,36 @@ def run_analyze(args: argparse.Namespace) -> int:
         device=device,
     )
     segmenter = create_segmenter(args.segmenter, sam_model=args.sam_model, device=device)
+    component_detector = detector
+    if args.component_model:
+        component_detector = create_detector(
+            args.component_model,
+            classes_path=args.classes,
+            confidence=args.confidence,
+            iou=args.iou,
+            image_size=args.image_size,
+            device=device,
+        )
     estimator = PortionEstimator(args.priors)
-    analyzer = FoodImageAnalyzer(detector, segmenter, estimator)
+    analyzer = FoodImageAnalyzer(
+        detector,
+        segmenter,
+        estimator,
+        nutrition_catalog=NutritionCatalog(args.catalog),
+        component_detector=component_detector,
+        enable_component_pass=args.component_pass,
+    )
     result = analyzer.analyze(
         args.image,
         plate_diameter_cm=args.plate_diameter_cm,
         cm_per_pixel=args.cm_per_pixel,
     )
-    payload = json.dumps(result.to_dict(), ensure_ascii=False, indent=2)
+    output = (
+        result.to_nutrition_dict(compact=True, unwrap_single=True)
+        if args.json_format == "nutrition"
+        else result.to_dict()
+    )
+    payload = json.dumps(output, ensure_ascii=False, indent=2)
     if args.output_json:
         target = Path(args.output_json)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -78,6 +103,14 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--sam-model", default="sam2.1_t.pt")
     analyze.add_argument("--classes", default=str(DEFAULT_CLASSES))
     analyze.add_argument("--priors", default=str(DEFAULT_PRIORS))
+    analyze.add_argument("--catalog", default=str(DEFAULT_CATALOG))
+    analyze.add_argument(
+        "--component-pass",
+        action="store_true",
+        help="Run a second detector pass inside complex dishes",
+    )
+    analyze.add_argument("--component-model", help="Optional component-specific YOLO weights")
+    analyze.add_argument("--json-format", choices=("full", "nutrition"), default="full")
     analyze.add_argument("--confidence", type=float, default=0.25)
     analyze.add_argument("--iou", type=float, default=0.60)
     analyze.add_argument("--image-size", type=int, default=640)
@@ -99,6 +132,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     args = build_parser().parse_args()
     return int(args.handler(args))
 

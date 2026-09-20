@@ -6,6 +6,7 @@ Baseline Python cho phần phân tích ảnh của ứng dụng dinh dưỡng m�
 2. Mask có sẵn từ YOLO-seg được dùng trực tiếp; với model detection, bounding box được đưa vào SAM 2 hoặc GrabCut để bóc tách vùng món ăn.
 3. Mask được đổi thành polygon để mobile app có thể vẽ và cho người dùng hiệu chỉnh.
 4. Khối lượng được ước lượng bằng diện tích thật × độ dày × khối lượng riêng khi ảnh có tỷ lệ mét. Nếu ảnh không có vật chuẩn, hệ thống trả về serving prior cùng khoảng bất định rõ ràng.
+5. Recipe catalog tách món phức hợp thành nguyên liệu, ghép các detection con nằm trong món tổng và tính calories/protein/fat/carb theo khẩu phần.
 
 Đây là baseline nghiên cứu, không phải thiết bị đo dinh dưỡng hay thiết bị y tế.
 
@@ -46,6 +47,34 @@ calcucalo analyze path\to\meal.jpg `
   --output-json outputs\result.json `
   --output-image outputs\overlay.jpg
 ```
+
+Để chỉ lấy JSON dinh dưỡng gọn cho mobile client:
+
+```powershell
+calcucalo analyze path\to\com-tam.jpg `
+  --model models\vietfood57_yolov10m.onnx `
+  --component-pass `
+  --json-format nutrition
+```
+
+`--component-pass` crop từng món phức hợp và chạy detector lần hai để tìm thành phần nhỏ ở độ phân giải cao hơn. Có thể truyền checkpoint chuyên biệt bằng `--component-model models\component_detector.pt`; nếu bỏ qua, hệ thống dùng lại dish detector.
+
+Khi chỉ có một món, output tuân theo contract:
+
+```json
+{
+  "food_id": "VN_COM_TAM",
+  "name": "Cơm tấm sườn bì chả",
+  "base_portion_g": 380,
+  "components": [
+    {"name": "Cơm tấm", "default_g": 200, "cal_per_100g": 130, "protein": 2.7, "fat": 0.3, "carb": 28.2},
+    {"name": "Sườn nướng", "default_g": 100, "cal_per_100g": 240, "protein": 20.0, "fat": 17.0, "carb": 1.0},
+    {"name": "Chả trứng", "default_g": 50, "cal_per_100g": 160, "protein": 11.0, "fat": 11.0, "carb": 4.0}
+  ]
+}
+```
+
+`--json-format full` còn trả về bounding box, polygon, khoảng khối lượng, tổng macro ước lượng, thành phần nào có bằng chứng thị giác và thành phần nào chỉ đến từ công thức. Catalog hiện phủ 67 lớp món ăn tại `configs/food_catalog.json` nhưng các số liệu đang ở mức seed để phát triển, chưa được chuyên gia dinh dưỡng thẩm định.
 
 Dùng SAM 2 để có mask tốt hơn (lần đầu Ultralytics sẽ tải trọng số):
 
@@ -104,6 +133,8 @@ Checkpoint tốt nhất nằm tại `runs/detect/vietfood67_yolo11n/weights/best
 ```powershell
 $env:CALCUCALO_MODEL = "models\vietfood57_yolov10m.onnx"
 $env:CALCUCALO_SEGMENTER = "grabcut" # hoặc sam
+$env:CALCUCALO_COMPONENT_PASS = "true" # crop và phân tích món phức hợp lần hai
+# $env:CALCUCALO_COMPONENT_MODEL = "models\component_detector.pt"
 uvicorn calcucalo.api:app --host 0.0.0.0 --port 8000
 ```
 
@@ -112,7 +143,8 @@ Gọi API:
 ```powershell
 curl.exe -X POST "http://localhost:8000/api/v1/food/analyze" `
   -F "image=@path\to\meal.jpg" `
-  -F "plate_diameter_cm=25"
+  -F "plate_diameter_cm=25" `
+  -F "response_format=nutrition"
 ```
 
 Response gồm `bbox_xyxy`, `mask_polygons`, `detection_confidence`, `weight_g`, khoảng ước lượng, phương pháp và các giả định. Endpoint health là `GET /health`.
@@ -134,3 +166,5 @@ pytest
 ```
 
 Các test hiện kiểm tra công thức portion, fallback không hiệu chuẩn, lọc lớp người, serialization và validator của YOLO dataset.
+
+Tình trạng kỹ thuật, giới hạn và roadmap chi tiết nằm trong `MODEL_STATUS_AND_ROADMAP.md`.

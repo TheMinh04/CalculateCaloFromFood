@@ -10,11 +10,12 @@ from PIL import UnidentifiedImageError
 
 from .analyzer import FoodImageAnalyzer
 from .detector import create_detector
+from .nutrition import NutritionCatalog
 from .portion import PortionEstimator
 from .segmenter import create_segmenter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-app = FastAPI(title="CalcuCalo Vision API", version="0.1.0")
+app = FastAPI(title="CalcuCalo Vision API", version="0.2.0")
 
 
 @lru_cache(maxsize=1)
@@ -34,8 +35,28 @@ def get_analyzer() -> FoodImageAnalyzer:
         classes_path=PROJECT_ROOT / "configs" / "vietfood67_classes.yaml",
         device=device,
     )
+    component_detector = detector
+    component_model = os.getenv("CALCUCALO_COMPONENT_MODEL")
+    if component_model:
+        component_detector = create_detector(
+            component_model,
+            classes_path=PROJECT_ROOT / "configs" / "vietfood67_classes.yaml",
+            device=device,
+        )
     segmenter = create_segmenter(segmenter_name, sam_model=sam_model, device=device)
-    return FoodImageAnalyzer(detector, segmenter, PortionEstimator(priors))
+    catalog = os.getenv(
+        "CALCUCALO_FOOD_CATALOG",
+        str(PROJECT_ROOT / "configs" / "food_catalog.json"),
+    )
+    return FoodImageAnalyzer(
+        detector,
+        segmenter,
+        PortionEstimator(priors),
+        nutrition_catalog=NutritionCatalog(catalog),
+        component_detector=component_detector,
+        enable_component_pass=os.getenv("CALCUCALO_COMPONENT_PASS", "false").casefold()
+        in {"1", "true", "yes"},
+    )
 
 
 @app.get("/health")
@@ -53,9 +74,12 @@ async def analyze_food(
     image: Annotated[UploadFile, File()],
     plate_diameter_cm: Annotated[float | None, Form()] = None,
     cm_per_pixel: Annotated[float | None, Form()] = None,
+    response_format: Annotated[str, Form()] = "full",
 ) -> dict[str, object]:
     if plate_diameter_cm is not None and cm_per_pixel is not None:
         raise HTTPException(status_code=422, detail="Use only one scale calibration method")
+    if response_format not in {"full", "nutrition"}:
+        raise HTTPException(status_code=422, detail="response_format must be full or nutrition")
     payload = await image.read()
     if not payload:
         raise HTTPException(status_code=422, detail="Empty image")
@@ -72,4 +96,6 @@ async def analyze_food(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if response_format == "nutrition":
+        return result.to_nutrition_dict(compact=True, unwrap_single=True)
     return result.to_dict()
