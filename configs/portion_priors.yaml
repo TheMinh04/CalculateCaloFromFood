@@ -1,0 +1,119 @@
+# Heuristic starting points only. Replace with measurements from weighed meals.
+# density_g_cm3 and thickness_cm are used only when a metric image scale exists.
+# default_mass_g is used when a single RGB image has no scale reference.
+defaults:
+  density_g_cm3: 0.90
+  thickness_cm: 2.0
+  default_mass_g: 180
+  relative_uncertainty: 0.50
+  geometry_uncertainty: 0.30
+  min_mass_g: 10
+  max_mass_g: 1200
+
+liquid_classes:
+  - Banh canh
+  - Bo kho
+  - Bun bo Hue
+  - Bun mam
+  - Bun rieu
+  - Canh
+  - Hu tieu
+  - Kho qua thit
+  - Lau
+  - Pho
+  - Bun cha ca
+  - Chao long
+  - Sup cua
+
+foods:
+  Banh canh:
+    default_mass_g: 550
+    relative_uncertainty: 0.40
+  Bo kho:
+    default_mass_g: 450
+    relative_uncertainty: 0.45
+  Bun bo Hue:
+    default_mass_g: 600
+    relative_uncertainty: 0.40
+  Bun mam:
+    default_mass_g: 600
+    relative_uncertainty: 0.40
+  Bun rieu:
+    default_mass_g: 550
+    relative_uncertainty: 0.40
+  Canh:
+    default_mass_g: 300
+    relative_uncertainty: 0.50
+  Hu tieu:
+    default_mass_g: 550
+    relative_uncertainty: 0.40
+  Kho qua thit:
+    default_mass_g: 400
+    relative_uncertainty: 0.45
+  Lau:
+    default_mass_g: 900
+    relative_uncertainty: 0.55
+  Bun cha ca:
+    default_mass_g: 550
+    relative_uncertainty: 0.40
+  Chao long:
+    default_mass_g: 500
+    relative_uncertainty: 0.40
+  Sup cua:
+    default_mass_g: 300
+    relative_uncertainty: 0.40
+  Com:
+    density_g_cm3: 0.72
+    thickness_cm: 2.8
+    default_mass_g: 180
+  Com tam:
+    density_g_cm3: 0.72
+    thickness_cm: 2.8
+    default_mass_g: 200
+  Bun:
+    density_g_cm3: 0.65
+    thickness_cm: 2.6
+    default_mass_g: 180
+  Dau hu:
+    density_g_cm3: 0.95
+    thickness_cm: 2.2
+    default_mass_g: 100
+  Xoi:
+    density_g_cm3: 0.80
+    thickness_cm: 3.0
+    default_mass_g: 200
+  Pho:
+    default_mass_g: 550
+    relative_uncertainty: 0.40
+  Banh mi:
+    density_g_cm3: 0.35
+    thickness_cm: 5.0
+    default_mass_g: 180
+  Thit bo:
+    density_g_cm3: 1.02
+    thickness_cm: 1.8
+    default_mass_g: 120
+  Thit ga:
+    density_g_cm3: 1.04
+    thickness_cm: 2.2
+    default_mass_g: 140
+  Thit heo:
+    density_g_cm3: 1.03
+    thickness_cm: 2.0
+    default_mass_g: 120
+  Tom:
+    density_g_cm3: 1.02
+    thickness_cm: 1.5
+    default_mass_g: 100
+  Rau:
+    density_g_cm3: 0.35
+    thickness_cm: 2.5
+    default_mass_g: 100
+  Salad:
+    density_g_cm3: 0.30
+    thickness_cm: 3.0
+    default_mass_g: 150
+  Trung:
+    density_g_cm3: 1.03
+    thickness_cm: 1.5
+    default_mass_g: 55

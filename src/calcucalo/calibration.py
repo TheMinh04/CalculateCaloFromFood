@@ -1,0 +1,66 @@
+from __future__ import annotations
+
+import cv2
+import numpy as np
+
+from .domain import ScaleCalibration
+
+
+class PlateScaleEstimator:
+    """Estimate metric scale from a near-circular plate of known diameter."""
+
+    def estimate(self, image_rgb: np.ndarray, plate_diameter_cm: float) -> ScaleCalibration | None:
+        if plate_diameter_cm <= 0:
+            raise ValueError("plate_diameter_cm must be positive")
+
+        height, width = image_rgb.shape[:2]
+        shortest = min(height, width)
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        gray = cv2.GaussianBlur(gray, (9, 9), 1.5)
+        circles = cv2.HoughCircles(
+            gray,
+            cv2.HOUGH_GRADIENT,
+            dp=1.2,
+            minDist=max(shortest // 3, 1),
+            param1=100,
+            param2=35,
+            minRadius=max(int(shortest * 0.15), 5),
+            maxRadius=max(int(shortest * 0.49), 6),
+        )
+        if circles is None:
+            return None
+
+        center_x, center_y = width / 2.0, height / 2.0
+        candidates = circles[0]
+
+        def score(circle: np.ndarray) -> float:
+            x, y, radius = map(float, circle)
+            center_distance = np.hypot(x - center_x, y - center_y) / max(shortest, 1)
+            return radius / shortest - 0.5 * center_distance
+
+        x, y, radius = map(float, max(candidates, key=score))
+        diameter_px = 2.0 * radius
+        if diameter_px <= 0:
+            return None
+
+        center_distance = np.hypot(x - center_x, y - center_y) / max(shortest, 1)
+        confidence = float(np.clip(0.85 - center_distance, 0.35, 0.85))
+        return ScaleCalibration(
+            cm_per_pixel=plate_diameter_cm / diameter_px,
+            method="detected_plate",
+            confidence=confidence,
+            reference={
+                "plate_diameter_cm": round(plate_diameter_cm, 2),
+                "circle_xy_radius_px": [round(x, 1), round(y, 1), round(radius, 1)],
+            },
+        )
+
+
+def manual_scale(cm_per_pixel: float) -> ScaleCalibration:
+    return ScaleCalibration(
+        cm_per_pixel=cm_per_pixel,
+        method="manual_scale",
+        confidence=0.95,
+        reference={"provided_by_client": True},
+    )
+
