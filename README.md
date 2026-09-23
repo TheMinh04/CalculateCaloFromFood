@@ -59,6 +59,26 @@ calcucalo analyze path\to\com-tam.jpg `
 
 `--component-pass` crop từng món phức hợp và chạy detector lần hai để tìm thành phần nhỏ ở độ phân giải cao hơn. Có thể truyền checkpoint chuyên biệt bằng `--component-model models\component_detector.pt`; nếu bỏ qua, hệ thống dùng lại dish detector.
 
+Khi người dùng chỉnh gram trên UI, tạo file như sau và truyền bằng `--component-overrides`:
+
+```json
+{
+  "VN_COM_TAM": {
+    "Cơm tấm": 180,
+    "Sườn nướng": 120,
+    "Chả trứng": 45
+  }
+}
+```
+
+```powershell
+calcucalo analyze meal.jpg --model model.onnx `
+  --component-overrides corrected-grams.json `
+  --json-format full
+```
+
+Giá trị người dùng nhập có `basis=user_override`, được ưu tiên hơn geometry/catalog và làm hệ thống tính lại `estimated_totals`. Nên dùng `ingredient_id` từ `estimated_components` làm key ổn định (ví dụ `broken_rice`, `grilled_pork`); tên tiếng Việt cũng được chấp nhận. Contract nutrition gọn vẫn mô tả khẩu phần mặc định nên không thay đổi `default_g`.
+
 Khi chỉ có một món, output tuân theo contract:
 
 ```json
@@ -75,6 +95,54 @@ Khi chỉ có một món, output tuân theo contract:
 ```
 
 `--json-format full` còn trả về bounding box, polygon, khoảng khối lượng, tổng macro ước lượng, thành phần nào có bằng chứng thị giác và thành phần nào chỉ đến từ công thức. Catalog hiện phủ 67 lớp món ăn tại `configs/food_catalog.json` nhưng các số liệu đang ở mức seed để phát triển, chưa được chuyên gia dinh dưỡng thẩm định.
+
+### Trace chi tiết phép tính
+
+Full JSON giải thích được từng kết quả thay vì chỉ trả một con số cuối:
+
+- `calculation_trace`: phiên bản trace và tuyên bố rõ đây là ước lượng, chưa phải phép đo chiều sâu.
+- `calibration.calculation`: cách đổi pixel sang centimet, đầu vào và giới hạn góc chụp.
+- `items[].portion.calculation`: công thức diện tích, thể tích, khối lượng thô, giới hạn min/max, sai số và confidence.
+- `foods[].estimated_components[].calculation`: phép nhân gram với calories/protein/fat/carb trên 100 g.
+- `foods[].total_calculation`: phép cộng dinh dưỡng của các component.
+
+Ví dụ rút gọn khi ảnh có tỷ lệ mét:
+
+```json
+{
+  "portion": {
+    "weight_g": 201.6,
+    "method": "mask_area_x_thickness_x_density",
+    "calculation": {
+      "model": "mask_area_x_assumed_thickness_x_density",
+      "is_depth_measured": false,
+      "inputs": {
+        "mask_area_px": 10000,
+        "cm_per_pixel": 0.1,
+        "assumed_thickness_cm": 2.8,
+        "assumed_density_g_cm3": 0.72
+      },
+      "intermediate": {
+        "area_cm2": 100.0,
+        "volume_cm3": 280.0,
+        "raw_weight_g": 201.6,
+        "weight_was_clamped": false
+      },
+      "outputs": {
+        "estimated_weight_g": 201.6
+      }
+    }
+  }
+}
+```
+
+`is_depth_measured=false` được trả rõ vì `assumed_thickness_cm` là prior theo class, không phải chiều sâu đo từ ảnh. `--json-format nutrition` vẫn giữ nguyên contract gọn và không mang trace để tránh tăng payload cho mobile.
+
+Contract JSON gọn được khóa tại `schemas/nutrition_food.schema.json`. Kiểm tra coverage, food ID, macro và phân bổ gram trong catalog bằng:
+
+```powershell
+python scripts/validate_catalog.py --output outputs/catalog_validation.json
+```
 
 Dùng SAM 2 để có mask tốt hơn (lần đầu Ultralytics sẽ tải trọng số):
 
@@ -147,6 +215,8 @@ curl.exe -X POST "http://localhost:8000/api/v1/food/analyze" `
   -F "response_format=nutrition"
 ```
 
+API nhận cùng dữ liệu hiệu chỉnh qua trường form `component_overrides_json`, ví dụ `{"VN_COM_TAM":{"Cơm tấm":180}}`. Dùng `response_format=full` để nhận gram/tổng macro sau hiệu chỉnh.
+
 Response gồm `bbox_xyxy`, `mask_polygons`, `detection_confidence`, `weight_g`, khoảng ước lượng, phương pháp và các giả định. Endpoint health là `GET /health`.
 
 ## Hiệu chuẩn khối lượng cho dữ liệu thật
@@ -165,6 +235,25 @@ Các giá trị trong `configs/portion_priors.yaml` chỉ là điểm khởi đ�
 pytest
 ```
 
-Các test hiện kiểm tra công thức portion, fallback không hiệu chuẩn, lọc lớp người, serialization và validator của YOLO dataset.
+Các test hiện kiểm tra công thức portion, fallback không hiệu chuẩn, lọc lớp người, serialization, validator YOLO dataset, contract cơm tấm, coverage 67 lớp, component second-pass và metric evaluation.
+
+## Đánh giá trên dữ liệu cân thật
+
+Tạo JSONL, mỗi dòng là một ảnh. Đường dẫn ảnh tương đối được tính từ vị trí manifest:
+
+```json
+{"image":"images/com-tam-001.jpg","plate_diameter_cm":25,"foods":[{"food_id":"VN_COM_TAM","weight_g":392,"calories_kcal":585,"protein_g":29.5,"fat_g":20.1,"carb_g":70.2}]}
+```
+
+Schema nằm tại `schemas/evaluation_sample.schema.json`. Chạy evaluation:
+
+```powershell
+python scripts/evaluate_pipeline.py data/eval/manifest.jsonl `
+  --model runs/detect/vietfood67_yolo11s/weights/best.pt `
+  --component-pass `
+  --output outputs/evaluation.json
+```
+
+Report gồm precision/recall/F1 theo `food_id`, MAE/median error/MAPE cho gram, calories, protein, fat, carb và thống kê riêng từng món.
 
 Tình trạng kỹ thuật, giới hạn và roadmap chi tiết nằm trong `MODEL_STATUS_AND_ROADMAP.md`.

@@ -46,6 +46,11 @@ def run_analyze(args: argparse.Namespace) -> int:
             device=device,
         )
     estimator = PortionEstimator(args.priors)
+    component_overrides = None
+    if args.component_overrides:
+        component_overrides = json.loads(
+            Path(args.component_overrides).read_text(encoding="utf-8")
+        )
     analyzer = FoodImageAnalyzer(
         detector,
         segmenter,
@@ -58,6 +63,7 @@ def run_analyze(args: argparse.Namespace) -> int:
         args.image,
         plate_diameter_cm=args.plate_diameter_cm,
         cm_per_pixel=args.cm_per_pixel,
+        component_overrides=component_overrides,
     )
     output = (
         result.to_nutrition_dict(compact=True, unwrap_single=True)
@@ -110,6 +116,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a second detector pass inside complex dishes",
     )
     analyze.add_argument("--component-model", help="Optional component-specific YOLO weights")
+    analyze.add_argument(
+        "--component-overrides",
+        help="JSON file mapping food_id to component grams from user corrections",
+    )
     analyze.add_argument("--json-format", choices=("full", "nutrition"), default="full")
     analyze.add_argument("--confidence", type=float, default=0.25)
     analyze.add_argument("--iou", type=float, default=0.60)

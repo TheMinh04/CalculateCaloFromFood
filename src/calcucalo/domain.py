@@ -51,18 +51,22 @@ class ScaleCalibration:
     method: str
     confidence: float
     reference: dict[str, Any] = field(default_factory=dict)
+    calculation: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.cm_per_pixel <= 0:
             raise ValueError("cm_per_pixel must be positive")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "cm_per_pixel": round(self.cm_per_pixel, 6),
             "method": self.method,
             "confidence": round(self.confidence, 3),
             "reference": self.reference,
         }
+        if self.calculation:
+            result["calculation"] = self.calculation
+        return result
 
 
 @dataclass(frozen=True)
@@ -76,6 +80,7 @@ class PortionEstimate:
     area_cm2: float | None = None
     volume_cm3: float | None = None
     assumptions: tuple[str, ...] = ()
+    calculation: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -90,6 +95,8 @@ class PortionEstimate:
             result["area_cm2"] = round(self.area_cm2, 2)
         if self.volume_cm3 is not None:
             result["volume_cm3"] = round(self.volume_cm3, 2)
+        if self.calculation:
+            result["calculation"] = self.calculation
         return result
 
 
@@ -132,6 +139,16 @@ class AnalysisResult:
         return {
             "image": {"width": self.image_width, "height": self.image_height},
             "calibration": self.calibration.to_dict() if self.calibration else None,
+            "calculation_trace": {
+                "schema_version": "1.0",
+                "measurement_status": "estimated_not_measured",
+                "metric_scale_available": self.calibration is not None,
+                "depth_measurement_available": False,
+                "notes": [
+                    "A reported volume may use class-level assumed thickness.",
+                    "Inspect each portion.calculation.model and is_depth_measured field.",
+                ],
+            },
             "items": [item.to_dict() for item in self.items],
             "foods": [item.food for item in self.items if item.food and not item.component_of],
             "warnings": self.warnings,

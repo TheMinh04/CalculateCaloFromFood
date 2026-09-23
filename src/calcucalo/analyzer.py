@@ -14,7 +14,7 @@ from .domain import (
 )
 from .image_io import ImageInput, load_rgb_image
 from .masks import bbox_mask, mask_quality, mask_to_polygons, normalize_mask
-from .nutrition import ComponentEvidence, NutritionCatalog
+from .nutrition import ComponentEvidence, NutritionCatalog, normalize_food_name
 from .portion import PortionEstimator
 from .segmenter import Segmenter
 
@@ -45,7 +45,17 @@ class FoodImageAnalyzer:
         *,
         plate_diameter_cm: float | None = None,
         cm_per_pixel: float | None = None,
+        component_overrides: dict[str, dict[str, float]] | None = None,
     ) -> AnalysisResult:
+        if component_overrides is not None and (
+            not isinstance(component_overrides, dict)
+            or any(
+                not isinstance(components, dict) for components in component_overrides.values()
+            )
+        ):
+            raise ValueError(
+                "component_overrides must map food_id to an object of component grams"
+            )
         image = load_rgb_image(source)
         height, width = image.shape[:2]
         detections = [
@@ -107,7 +117,7 @@ class FoodImageAnalyzer:
         if not items:
             warnings.append("Khong phat hien mon an nao vuot nguong confidence.")
         elif self.nutrition_catalog is not None:
-            self._attach_nutrition(items, warnings)
+            self._attach_nutrition(items, warnings, component_overrides or {})
         return AnalysisResult(
             image_width=width,
             image_height=height,
@@ -135,6 +145,8 @@ class FoodImageAnalyzer:
                 continue
             best_by_ingredient: dict[str, Detection] = {}
             for candidate in self.component_detector.predict(crop):
+                if normalize_food_name(candidate.label) == normalize_food_name(parent.label):
+                    continue
                 ingredient_id = self.nutrition_catalog.match_component(parent.label, candidate.label)
                 if ingredient_id is None:
                     continue
@@ -196,10 +208,12 @@ class FoodImageAnalyzer:
             return portion
         lower_ratio = portion.lower_g / portion.weight_g
         upper_ratio = portion.upper_g / portion.weight_g
+        lower_g = base_portion * lower_ratio
+        upper_g = base_portion * upper_ratio
         return PortionEstimate(
             weight_g=base_portion,
-            lower_g=base_portion * lower_ratio,
-            upper_g=base_portion * upper_ratio,
+            lower_g=lower_g,
+            upper_g=upper_g,
             method="recipe_base_portion_prior",
             confidence=portion.confidence,
             area_px=portion.area_px,
@@ -207,6 +221,31 @@ class FoodImageAnalyzer:
                 *portion.assumptions,
                 "Khối lượng dùng khẩu phần cơ sở của công thức vì ảnh chưa có tỷ lệ mét.",
             ),
+            calculation={
+                "model": "recipe_base_portion_prior",
+                "is_depth_measured": False,
+                "formula": "estimated_weight_g = recipe_base_portion_g",
+                "range_formula": "range_g = recipe_base_portion_g * source_range_ratio",
+                "inputs": {
+                    "recipe_base_portion_g": round(base_portion, 4),
+                    "source_method": portion.method,
+                    "source_weight_g": round(portion.weight_g, 4),
+                    "source_lower_g": round(portion.lower_g, 4),
+                    "source_upper_g": round(portion.upper_g, 4),
+                },
+                "intermediate": {
+                    "lower_ratio": round(lower_ratio, 6),
+                    "upper_ratio": round(upper_ratio, 6),
+                },
+                "outputs": {
+                    "estimated_weight_g": round(base_portion, 4),
+                    "lower_g": round(lower_g, 4),
+                    "upper_g": round(upper_g, 4),
+                },
+                "limitations": [
+                    "The recipe portion is a catalog prior and was not measured from the image."
+                ],
+            },
         )
 
     @staticmethod
@@ -223,7 +262,12 @@ class FoodImageAnalyzer:
         )
         return intersection_width * intersection_height / max(child_area, 1.0) >= 0.60
 
-    def _attach_nutrition(self, items: list[AnalysisItem], warnings: list[str]) -> None:
+    def _attach_nutrition(
+        self,
+        items: list[AnalysisItem],
+        warnings: list[str],
+        component_overrides: dict[str, dict[str, float]],
+    ) -> None:
         assert self.nutrition_catalog is not None
         evidence_by_parent: dict[int, dict[str, ComponentEvidence]] = {}
         parent_indices = [
@@ -261,11 +305,13 @@ class FoodImageAnalyzer:
 
         missing_labels: list[str] = []
         for index, item in enumerate(items):
+            food_id = self.nutrition_catalog.food_id_for(item.label)
             item.food = self.nutrition_catalog.analyze(
                 item.label,
                 estimated_portion_g=item.portion.weight_g,
                 portion_method=item.portion.method,
                 evidence=evidence_by_parent.get(index),
+                component_overrides_g=component_overrides.get(food_id or ""),
             )
             if item.food is None and item.component_of is None:
                 missing_labels.append(item.label)

@@ -131,11 +131,22 @@ class NutritionCatalog:
         estimated_portion_g: float | None = None,
         portion_method: str | None = None,
         evidence: dict[str, ComponentEvidence] | None = None,
+        component_overrides_g: dict[str, float] | None = None,
     ) -> dict[str, Any] | None:
         profile = self.profile_for(label)
         if profile is None:
             return None
         evidence = evidence or {}
+        if component_overrides_g is not None and not isinstance(component_overrides_g, dict):
+            raise ValueError("component_overrides_g must be an object")
+        try:
+            normalized_overrides = {
+                normalize_food_name(key): float(value)
+                for key, value in (component_overrides_g or {}).items()
+            }
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Every component override must be a numeric gram value") from exc
+        applied_override_keys: set[str] = set()
         base_portion = float(profile["base_portion_g"])
         # A generic uncalibrated mass prior is weaker than the recipe-specific base portion.
         if estimated_portion_g is None or portion_method != "mask_area_x_thickness_x_density":
@@ -162,7 +173,23 @@ class NutritionCatalog:
             public_components.append(public)
 
             matched = evidence.get(ingredient_id)
-            if matched and matched.method == "mask_area_x_thickness_x_density":
+            override_keys = {
+                normalize_food_name(ingredient_id),
+                normalize_food_name(str(ingredient["name"])),
+                normalize_food_name(str(public["name"])),
+            }
+            override_matches = {
+                key: normalized_overrides[key] for key in override_keys if key in normalized_overrides
+            }
+            if override_matches:
+                if len(set(override_matches.values())) > 1:
+                    raise ValueError(f"Conflicting overrides for {public['name']}")
+                component_weight = next(iter(override_matches.values()))
+                if component_weight <= 0:
+                    raise ValueError(f"Component override for {public['name']} must be positive")
+                basis = "user_override"
+                applied_override_keys.update(override_matches)
+            elif matched and matched.method == "mask_area_x_thickness_x_density":
                 component_weight = matched.weight_g
                 basis = "visual_metric_estimate"
                 visual_matches += 1
@@ -172,14 +199,34 @@ class NutritionCatalog:
                 visual_matches += int(matched is not None)
 
             factor = component_weight / 100.0
+            calculated_nutrients = {
+                "calories_kcal": float(public["cal_per_100g"]) * factor,
+                "protein_g": float(public["protein"]) * factor,
+                "fat_g": float(public["fat"]) * factor,
+                "carb_g": float(public["carb"]) * factor,
+            }
             estimate = {
+                "ingredient_id": ingredient_id,
                 "name": public["name"],
                 "estimated_g": round(component_weight, 1),
-                "calories_kcal": round(public["cal_per_100g"] * factor, 1),
-                "protein_g": round(public["protein"] * factor, 1),
-                "fat_g": round(public["fat"] * factor, 1),
-                "carb_g": round(public["carb"] * factor, 1),
+                **{key: round(value, 1) for key, value in calculated_nutrients.items()},
                 "basis": basis,
+                "calculation": {
+                    "model": "per_100g_nutrition_scaling",
+                    "formula": "nutrient_amount = nutrient_per_100g * estimated_g / 100",
+                    "inputs": {
+                        "estimated_g": round(component_weight, 6),
+                        "cal_per_100g": round(float(public["cal_per_100g"]), 6),
+                        "protein_per_100g": round(float(public["protein"]), 6),
+                        "fat_per_100g": round(float(public["fat"]), 6),
+                        "carb_per_100g": round(float(public["carb"]), 6),
+                        "component_weight_basis": basis,
+                    },
+                    "intermediate": {"portion_factor": round(factor, 8)},
+                    "outputs": {
+                        key: round(value, 6) for key, value in calculated_nutrients.items()
+                    },
+                },
             }
             if matched:
                 estimate["visual_label"] = matched.label
@@ -188,6 +235,7 @@ class NutritionCatalog:
             for nutrient in totals:
                 totals[nutrient] += float(estimate[nutrient])
 
+        rounded_totals = {key: round(value, 1) for key, value in totals.items()}
         return {
             "food_id": str(profile["food_id"]),
             "name": str(profile["name"]),
@@ -195,13 +243,23 @@ class NutritionCatalog:
             "components": public_components,
             "estimated_portion_g": round(estimated_portion, 1),
             "estimated_components": component_estimates,
-            "estimated_totals": {key: round(value, 1) for key, value in totals.items()},
+            "estimated_totals": rounded_totals,
+            "total_calculation": {
+                "model": "sum_component_nutrients",
+                "formula": "dish_total = sum(component_nutrient_amounts)",
+                "component_count": len(component_estimates),
+                "outputs": rounded_totals,
+            },
             "analysis_basis": (
                 "visual_components_plus_recipe_catalog"
                 if visual_matches
                 else "dish_detection_plus_recipe_catalog"
             ),
             "visual_components_matched": visual_matches,
+            "user_components_overridden": len(applied_override_keys),
+            "unmatched_component_overrides": sorted(
+                set(normalized_overrides) - applied_override_keys
+            ),
             "data_quality": str(profile.get("data_quality", self.data_quality)),
             "nutrition_reference": self.nutrition_reference,
             "notes": list(map(str, profile.get("notes", []))),

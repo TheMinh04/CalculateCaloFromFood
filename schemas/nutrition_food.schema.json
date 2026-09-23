@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://calcucalo.local/schemas/nutrition_food.schema.json",
+  "title": "CalcuCalo compact food nutrition response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["food_id", "name", "base_portion_g", "components"],
+  "properties": {
+    "food_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_]+$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_portion_g": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "default_g", "cal_per_100g", "protein", "fat", "carb"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "default_g": {"type": "number", "exclusiveMinimum": 0},
+          "cal_per_100g": {"type": "number", "minimum": 0},
+          "protein": {"type": "number", "minimum": 0},
+          "fat": {"type": "number", "minimum": 0},
+          "carb": {"type": "number", "minimum": 0}
+        }
+      }
+    }
+  }
+}

@@ -1,7 +1,7 @@
 # Báo cáo trạng thái model CalcuCalo Vision
 
 Ngày cập nhật: 21/09/2026  
-Phiên bản mã nguồn: 0.2.0
+Phiên bản mã nguồn: 0.3.0
 
 ## 1. Kết luận ngắn
 
@@ -33,7 +33,12 @@ Hệ thống **chưa phải model dinh dưỡng đã được kiểm định**. 
 | Tính macro | Đã có | Tính calories, protein, fat, carb theo gram của từng component |
 | JSON mobile | Đã có | Contract gọn `food_id/name/base_portion_g/components` |
 | JSON nghiên cứu | Đã có | Thêm bbox, mask, confidence, estimated totals, basis và warnings |
+| Calculation trace | Đã có | Trả công thức, đầu vào, giá trị trung gian, giới hạn, sai số và output cho calibration/portion/macro |
+| User correction | Đã có | Override gram từng component và tính lại tổng macro |
 | API | Đã có | FastAPI `POST /api/v1/food/analyze` |
+| Contract validation | Đã có | JSON Schema cho nutrition response và evaluation manifest |
+| Catalog QA | Đã có | Kiểm tra coverage, duplicate ID, calories/macro và tổng gram |
+| End-to-end evaluation | Đã có | Precision/recall/F1 và MAE/MAPE cho weight/calories/macros |
 | Test tự động | Đã có | Công thức portion, catalog, coverage 67 lớp, component grouping và schema |
 
 ## 3. Kiến trúc hiện tại
@@ -129,6 +134,7 @@ response_format=nutrition
 - `estimated_components`, `estimated_totals`.
 - `analysis_basis`, `visual_components_matched`, `data_quality`.
 - `component_of` để tránh tính một thành phần hai lần.
+- `user_override` khi gram đến từ thanh chỉnh của người dùng; giá trị này ưu tiên hơn model và catalog.
 - warnings khi ảnh thiếu tỷ lệ hoặc catalog thiếu dữ liệu.
 
 ## 5. Mức chính xác hiện tại
@@ -239,6 +245,18 @@ Nguồn chính thức tham khảo: [Bảng thành phần thực phẩm Việt Na
 | Runtime | p50/p95 latency, RAM/VRAM, model size trên thiết bị mục tiêu |
 
 Test set phải tách theo **quán/người chuẩn bị và thời điểm**, không chỉ random theo ảnh. Nếu cùng một đĩa hoặc chuỗi ảnh gần nhau xuất hiện ở cả train và test, kết quả sẽ quá lạc quan.
+
+Công cụ đã có sẵn:
+
+```powershell
+python scripts\validate_catalog.py --output outputs\catalog_validation.json
+python scripts\evaluate_pipeline.py data\eval\manifest.jsonl `
+  --model runs\detect\vietfood67_yolo11s\weights\best.pt `
+  --component-pass `
+  --output outputs\evaluation.json
+```
+
+Schema của từng dòng ground truth nằm tại `schemas/evaluation_sample.schema.json`.
 
 ## 8. Thứ tự triển khai khuyến nghị
 

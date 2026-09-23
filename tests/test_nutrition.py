@@ -65,6 +65,28 @@ def test_com_tam_compact_schema_matches_requested_contract() -> None:
     }
 
 
+def test_user_component_grams_override_catalog_estimate_and_recalculate_macros() -> None:
+    catalog = NutritionCatalog(CATALOG)
+
+    food = catalog.analyze(
+        "Com tam",
+        component_overrides_g={"Cơm tấm": 150, "unknown topping": 25},
+    )
+
+    assert food is not None
+    assert food["estimated_components"][0]["estimated_g"] == 150
+    assert food["estimated_components"][0]["basis"] == "user_override"
+    assert food["estimated_components"][0]["calories_kcal"] == 195
+    calculation = food["estimated_components"][0]["calculation"]
+    assert calculation["inputs"]["estimated_g"] == 150
+    assert calculation["intermediate"]["portion_factor"] == 1.5
+    assert calculation["outputs"]["calories_kcal"] == 195
+    assert food["total_calculation"]["component_count"] == 3
+    assert food["total_calculation"]["outputs"] == food["estimated_totals"]
+    assert food["user_components_overridden"] == 1
+    assert food["unmatched_component_overrides"] == ["unknown topping"]
+
+
 def test_catalog_covers_every_food_class_except_human() -> None:
     import yaml
 
@@ -101,6 +123,10 @@ def test_nested_visual_detections_are_grouped_as_recipe_components() -> None:
     assert result.items[2].component_of == "VN_COM_TAM"
     assert result.items[0].portion.weight_g == 380
     assert result.items[0].portion.method == "recipe_base_portion_prior"
+    portion_trace = result.items[0].portion.to_dict()["calculation"]
+    assert portion_trace["model"] == "recipe_base_portion_prior"
+    assert portion_trace["inputs"]["recipe_base_portion_g"] == 380
+    assert portion_trace["outputs"]["estimated_weight_g"] == 380
     assert result.to_nutrition_dict(compact=True, unwrap_single=True)["food_id"] == "VN_COM_TAM"
 
 

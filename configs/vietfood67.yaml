@@ -1,0 +1,73 @@
+path: D:/Model/CalcuCalo/data/raw/vietfood67/dataset
+names:
+  0: Banh canh
+  1: Banh chung
+  2: Banh cuon
+  3: Banh khot
+  4: Banh mi
+  5: Banh trang
+  6: Banh trang tron
+  7: Banh xeo
+  8: Bo kho
+  9: Bo la lot
+  10: Bong cai
+  11: Bun
+  12: Bun bo Hue
+  13: Bun cha
+  14: Bun dau
+  15: Bun mam
+  16: Bun rieu
+  17: Ca
+  18: Ca chua
+  19: Ca phao
+  20: Ca rot
+  21: Canh
+  22: Cha
+  23: Cha gio
+  24: Chanh
+  25: Com
+  26: Com tam
+  27: Con nguoi
+  28: Cu kieu
+  29: Cua
+  30: Dau hu
+  31: Dua chua
+  32: Dua leo
+  33: Goi cuon
+  34: Hamburger
+  35: Heo quay
+  36: Hu tieu
+  37: Kho qua thit
+  38: Khoai tay chien
+  39: Lau
+  40: Long heo
+  41: Mi
+  42: Muc
+  43: Nam
+  44: Oc
+  45: Ot chuong
+  46: Pho
+  47: Pho mai
+  48: Rau
+  49: Salad
+  50: Thit bo
+  51: Thit ga
+  52: Thit heo
+  53: Thit kho
+  54: Thit nuong
+  55: Tom
+  56: Trung
+  57: Xoi
+  58: Banh beo
+  59: Cao lau
+  60: Mi Quang
+  61: Com chien duong chau
+  62: Bun cha ca
+  63: Com chien ga
+  64: Chao long
+  65: Nom hoa chuoi
+  66: Nui xao bo
+  67: Sup cua
+train: images/train
+val: images/valid
+test: images/test

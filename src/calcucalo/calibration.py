@@ -53,6 +53,22 @@ class PlateScaleEstimator:
                 "plate_diameter_cm": round(plate_diameter_cm, 2),
                 "circle_xy_radius_px": [round(x, 1), round(y, 1), round(radius, 1)],
             },
+            calculation={
+                "model": "known_plate_diameter",
+                "formula": "cm_per_pixel = plate_diameter_cm / plate_diameter_px",
+                "inputs": {
+                    "plate_diameter_cm": round(plate_diameter_cm, 4),
+                    "plate_radius_px": round(radius, 4),
+                    "plate_diameter_px": round(diameter_px, 4),
+                },
+                "outputs": {
+                    "cm_per_pixel": round(plate_diameter_cm / diameter_px, 8),
+                },
+                "limitations": [
+                    "The plate is assumed to be circular and photographed near top-down.",
+                    "No perspective rectification is applied to an elliptical plate.",
+                ],
+            },
         )
 
 
@@ -62,5 +78,13 @@ def manual_scale(cm_per_pixel: float) -> ScaleCalibration:
         method="manual_scale",
         confidence=0.95,
         reference={"provided_by_client": True},
+        calculation={
+            "model": "client_provided_scale",
+            "formula": "cm_per_pixel = client_provided_value",
+            "inputs": {"client_provided_cm_per_pixel": round(cm_per_pixel, 8)},
+            "outputs": {"cm_per_pixel": round(cm_per_pixel, 8)},
+            "limitations": [
+                "The caller is responsible for camera calibration and perspective correction."
+            ],
+        },
     )
-

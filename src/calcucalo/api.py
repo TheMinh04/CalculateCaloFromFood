@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -15,7 +16,7 @@ from .portion import PortionEstimator
 from .segmenter import create_segmenter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-app = FastAPI(title="CalcuCalo Vision API", version="0.2.0")
+app = FastAPI(title="CalcuCalo Vision API", version="0.3.0")
 
 
 @lru_cache(maxsize=1)
@@ -75,11 +76,20 @@ async def analyze_food(
     plate_diameter_cm: Annotated[float | None, Form()] = None,
     cm_per_pixel: Annotated[float | None, Form()] = None,
     response_format: Annotated[str, Form()] = "full",
+    component_overrides_json: Annotated[str | None, Form()] = None,
 ) -> dict[str, object]:
     if plate_diameter_cm is not None and cm_per_pixel is not None:
         raise HTTPException(status_code=422, detail="Use only one scale calibration method")
     if response_format not in {"full", "nutrition"}:
         raise HTTPException(status_code=422, detail="response_format must be full or nutrition")
+    component_overrides = None
+    if component_overrides_json:
+        try:
+            component_overrides = json.loads(component_overrides_json)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=422, detail="Invalid component_overrides_json") from exc
+        if not isinstance(component_overrides, dict):
+            raise HTTPException(status_code=422, detail="component_overrides_json must be an object")
     payload = await image.read()
     if not payload:
         raise HTTPException(status_code=422, detail="Empty image")
@@ -91,6 +101,7 @@ async def analyze_food(
             payload,
             plate_diameter_cm=plate_diameter_cm,
             cm_per_pixel=cm_per_pixel,
+            component_overrides=component_overrides,
         )
     except (UnidentifiedImageError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
