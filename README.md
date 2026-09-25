@@ -10,6 +10,112 @@ Baseline Python cho phần phân tích ảnh của ứng dụng dinh dưỡng m�
 
 Đây là baseline nghiên cứu, không phải thiết bị đo dinh dưỡng hay thiết bị y tế.
 
+## Cấu trúc thư mục dự án
+
+Cây dưới đây mô tả cấu trúc đang dùng của CalcuCalo. Các thư mục dữ liệu, trọng số và kết quả chạy được giữ local, không đưa lên Git theo cấu hình trong `.gitignore`.
+
+```text
+CalcuCalo/
+├── configs/                              # Cấu hình class, khẩu phần và catalog dinh dưỡng
+│   ├── food_catalog.json                 # Món → food_id, thành phần, gram mặc định và macro/100 g
+│   ├── portion_priors.yaml               # Độ dày, mật độ, khối lượng và sai số giả định theo món
+│   ├── vietfood67_classes.yaml           # Ánh xạ class ID 0..67 của VietFood67
+│   └── vietfood67.yaml                   # Data YAML sinh từ dataset để Ultralytics train
+│
+├── data/                                 # Dữ liệu local, bị Git bỏ qua
+│   └── raw/vietfood67/dataset/
+│       ├── images/
+│       │   ├── train/                    # Ảnh dùng huấn luyện
+│       │   ├── valid/                    # Ảnh dùng validation
+│       │   └── test/                     # Ảnh đánh giá cuối
+│       └── labels/
+│           ├── train/                    # Nhãn YOLO tương ứng images/train
+│           ├── valid/                    # Nhãn YOLO tương ứng images/valid
+│           └── test/                     # Nhãn YOLO tương ứng images/test
+│
+├── models/                               # Nơi lưu checkpoint .pt/.onnx local
+├── outputs/                              # JSON, ảnh overlay và báo cáo đánh giá xuất ra
+├── runs/                                 # Log, biểu đồ và weights do Ultralytics sinh khi train
+│
+├── schemas/                              # JSON Schema cho các contract dữ liệu ổn định
+│   ├── nutrition_food.schema.json        # Schema response dinh dưỡng gọn cho mobile
+│   └── evaluation_sample.schema.json     # Schema một dòng ground truth evaluation JSONL
+│
+├── scripts/                              # Các entry point phục vụ dữ liệu, train và đánh giá
+│   ├── download_reference_weights.py     # Tải và kiểm tra checksum checkpoint demo
+│   ├── prepare_vietfood67.py             # Wrapper chuẩn bị/kiểm tra dataset VietFood67
+│   ├── train_detector.py                 # Fine-tune YOLO, resume và export ONNX
+│   ├── validate_catalog.py               # Kiểm tra coverage, ID, gram và macro của catalog
+│   └── evaluate_pipeline.py              # Đo F1, MAE, MAPE trên manifest có ground truth
+│
+├── src/
+│   ├── calcucalo/                        # Python package chính
+│   │   ├── __init__.py                   # Public exports và phiên bản package
+│   │   ├── analyzer.py                   # Điều phối toàn pipeline phân tích một ảnh
+│   │   ├── api.py                        # FastAPI: health check và endpoint analyze
+│   │   ├── calibration.py                # Tỷ lệ cm/pixel từ đĩa tròn hoặc client cung cấp
+│   │   ├── cli.py                        # CLI analyze và prepare-dataset
+│   │   ├── dataset.py                    # Tìm layout YOLO, validate nhãn và sinh data YAML
+│   │   ├── detector.py                   # Adapter Ultralytics .pt và ONNX Runtime .onnx
+│   │   ├── domain.py                     # Dataclass Detection, Calibration, Portion và Result
+│   │   ├── evaluation.py                 # Tích lũy confusion matrix và sai số dinh dưỡng
+│   │   ├── image_io.py                   # Đọc ảnh, sửa EXIF orientation và chuẩn hóa RGB
+│   │   ├── masks.py                      # Chuẩn hóa mask, polygon và kiểm tra chất lượng mask
+│   │   ├── nutrition.py                  # Ghép recipe/component và tính calories, macro
+│   │   ├── portion.py                    # Ước lượng gram, thể tích và khoảng bất định
+│   │   ├── segmenter.py                  # SAM 2, GrabCut và bounding-box fallback
+│   │   └── visualize.py                  # Vẽ bbox/mask/nhãn và lưu ảnh overlay
+│   └── calcucalo_vision.egg-info/        # Metadata sinh bởi pip install -e; không sửa tay
+│
+├── tests/                                # Unit/integration tests
+│   ├── test_analyzer.py                  # Pipeline, serialization và calculation trace
+│   ├── test_calibration.py               # Công thức hiệu chuẩn từ đường kính đĩa
+│   ├── test_dataset.py                   # Layout, label và cấu hình dataset
+│   ├── test_detector.py                  # Decode output và hậu xử lý detector
+│   ├── test_evaluation.py                # Precision/recall/F1 và MAE/MAPE
+│   ├── test_nutrition.py                 # Catalog, component pass, override và macro
+│   └── test_portion.py                   # Geometry, serving prior và món dạng nước
+│
+├── .gitignore                            # Loại dataset, weights, runs, outputs và cache khỏi Git
+├── pyproject.toml                        # Metadata package, dependencies, pytest và Ruff
+├── requirements.txt                     # Entry cài đặt tối giản cho môi trường hiện tại
+├── README.md                             # Hướng dẫn cài đặt, train, API và vận hành
+├── MODEL_STATUS_AND_ROADMAP.md           # Trạng thái kỹ thuật, giới hạn và lộ trình model
+├── Dự án_ Ứng dụng AI Phân Tích Dinh Dưỡng & Ước Tính Calories Món Ăn Việt Nam (Mô hình tương tự Cal AI).md
+│                                           # Đặc tả và dự tính sản phẩm ban đầu
+└── yolo11n.pt                            # Pretrained weight Ultralytics đã tải local
+```
+
+`yolo11n.pt`, `src/calcucalo_vision.egg-info/`, `.pytest_cache/` và `.ruff_cache/` là artefact sinh tự động. Checkpoint mới nên được lưu trong `models/`; kết quả từng experiment nên nằm trong `runs/`; file cần bàn giao như JSON hoặc overlay nên nằm trong `outputs/`. File `yolo11n.pt` hiện nằm ở root nên chưa khớp pattern ignore `models/*.pt`; cần chuyển nó vào `models/` hoặc tránh stage file này khi commit.
+
+Luồng phụ thuộc chính giữa các module:
+
+```mermaid
+flowchart TD
+    CLI[cli.py] --> Analyzer[analyzer.py]
+    API[api.py] --> Analyzer
+
+    Analyzer --> Detector[detector.py]
+    Analyzer --> Segmenter[segmenter.py]
+    Analyzer --> Calibration[calibration.py]
+    Analyzer --> Portion[portion.py]
+    Analyzer --> Nutrition[nutrition.py]
+
+    Segmenter --> Masks[masks.py]
+    Portion --> Priors[configs/portion_priors.yaml]
+    Nutrition --> Catalog[configs/food_catalog.json]
+    Detector --> Classes[configs/vietfood67_classes.yaml]
+
+    Analyzer --> Domain[domain.py]
+    Domain --> JSON[Full/compact JSON]
+    Domain --> Visualize[visualize.py]
+    Visualize --> Overlay[Ảnh overlay]
+
+    Dataset[dataset.py] --> DataYaml[configs/vietfood67.yaml]
+    DataYaml --> Train[scripts/train_detector.py]
+    Train --> Weights[best.pt / last.pt / best.onnx]
+```
+
 ## Vì sao không train YOLO-seg trực tiếp?
 
 VietFood67 có khoảng 33.003 ảnh, 67 lớp món ăn và một lớp người, nhưng nhãn công khai là **bounding box**, không phải polygon mask, depth hay khối lượng. Vì vậy:

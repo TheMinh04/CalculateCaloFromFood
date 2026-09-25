@@ -29,6 +29,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_save_dir(model: object, results: object) -> Path:
+    """Resolve the Ultralytics run directory across single- and multi-GPU returns."""
+    result_save_dir = getattr(results, "save_dir", None)
+    if result_save_dir:
+        return Path(result_save_dir)
+
+    trainer = getattr(model, "trainer", None)
+    trainer_save_dir = getattr(trainer, "save_dir", None)
+    if trainer_save_dir:
+        return Path(trainer_save_dir)
+
+    raise RuntimeError(
+        "Training finished but the output directory could not be resolved from "
+        "either results.save_dir or model.trainer.save_dir."
+    )
+
+
 def main() -> int:
     args = build_parser().parse_args()
     try:
@@ -58,7 +75,7 @@ def main() -> int:
             seed=42,
             deterministic=True,
         )
-    save_dir = Path(results.save_dir)
+    save_dir = resolve_save_dir(model, results)
     best = save_dir / "weights" / "best.pt"
     print(f"Training output: {save_dir}")
     print(f"Best checkpoint: {best}")
