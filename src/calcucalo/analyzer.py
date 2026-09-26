@@ -16,6 +16,7 @@ from .image_io import ImageInput, load_rgb_image
 from .masks import bbox_mask, mask_quality, mask_to_polygons, normalize_mask
 from .nutrition import ComponentEvidence, NutritionCatalog, normalize_food_name
 from .portion import PortionEstimator
+from .quality import assess_image_quality
 from .segmenter import Segmenter
 
 
@@ -58,6 +59,7 @@ class FoodImageAnalyzer:
             )
         image = load_rgb_image(source)
         height, width = image.shape[:2]
+        image_quality = assess_image_quality(image)
         detections = [
             detection
             for detection in self.detector.predict(image)
@@ -67,19 +69,23 @@ class FoodImageAnalyzer:
             detections.extend(self._detect_nested_components(image, detections))
 
         calibration: ScaleCalibration | None = None
-        warnings: list[str] = []
+        warnings: list[str] = [
+            recommendation
+            for recommendation in image_quality["recommendations"]
+            if image_quality["issues"] and recommendation
+        ]
         if cm_per_pixel is not None:
             calibration = manual_scale(cm_per_pixel)
         elif plate_diameter_cm is not None:
             calibration = self.plate_scale_estimator.estimate(image, plate_diameter_cm)
             if calibration is None:
                 warnings.append(
-                    "Khong tim thay duong tron cua dia/bat; khoi luong dang dung serving prior."
+                    "Không tìm thấy đường tròn của đĩa/bát; khối lượng đang dùng khẩu phần mặc định."
                 )
         else:
             warnings.append(
-                "Anh khong co ty le met; khoi luong chi la serving prior. "
-                "Gui cm_per_pixel hoac plate_diameter_cm de uoc luong hinh hoc."
+                "Ảnh không có tỷ lệ mét; khối lượng chỉ là khẩu phần mặc định. "
+                "Hãy gửi cm_per_pixel hoặc plate_diameter_cm để ước lượng hình học."
             )
 
         missing = [detection for detection in detections if detection.mask is None]
@@ -115,7 +121,7 @@ class FoodImageAnalyzer:
             )
 
         if not items:
-            warnings.append("Khong phat hien mon an nao vuot nguong confidence.")
+            warnings.append("Không phát hiện món ăn nào vượt ngưỡng tin cậy.")
         elif self.nutrition_catalog is not None:
             self._attach_nutrition(items, warnings, component_overrides or {})
         return AnalysisResult(
@@ -124,6 +130,7 @@ class FoodImageAnalyzer:
             items=items,
             calibration=calibration,
             warnings=warnings,
+            image_quality=image_quality,
         )
 
     def _detect_nested_components(

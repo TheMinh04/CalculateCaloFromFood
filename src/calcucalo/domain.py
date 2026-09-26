@@ -134,10 +134,12 @@ class AnalysisResult:
     items: list[AnalysisItem]
     calibration: ScaleCalibration | None
     warnings: list[str] = field(default_factory=list)
+    image_quality: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "image": {"width": self.image_width, "height": self.image_height},
+            "image_quality": self.image_quality,
             "calibration": self.calibration.to_dict() if self.calibration else None,
             "calculation_trace": {
                 "schema_version": "1.0",

@@ -63,8 +63,12 @@ CalcuCalo/
 │   │   ├── masks.py                      # Chuẩn hóa mask, polygon và kiểm tra chất lượng mask
 │   │   ├── nutrition.py                  # Ghép recipe/component và tính calories, macro
 │   │   ├── portion.py                    # Ước lượng gram, thể tích và khoảng bất định
+│   │   ├── quality.py                    # Chấm độ nét, độ sáng, độ phân giải và gợi ý chụp lại
 │   │   ├── segmenter.py                  # SAM 2, GrabCut và bounding-box fallback
-│   │   └── visualize.py                  # Vẽ bbox/mask/nhãn và lưu ảnh overlay
+│   │   ├── visualize.py                  # Vẽ bbox/mask/nhãn và lưu ảnh overlay
+│   │   └── web/                          # Giao diện test được FastAPI phục vụ trực tiếp
+│   │       ├── index.html                # Trang upload, hiệu chuẩn và xem kết quả
+│   │       └── assets/                   # CSS và JavaScript gọi API/phủ bbox
 │   └── calcucalo_vision.egg-info/        # Metadata sinh bởi pip install -e; không sửa tay
 │
 ├── tests/                                # Unit/integration tests
@@ -74,7 +78,9 @@ CalcuCalo/
 │   ├── test_detector.py                  # Decode output và hậu xử lý detector
 │   ├── test_evaluation.py                # Precision/recall/F1 và MAE/MAPE
 │   ├── test_nutrition.py                 # Catalog, component pass, override và macro
-│   └── test_portion.py                   # Geometry, serving prior và món dạng nước
+│   ├── test_portion.py                   # Geometry, serving prior và món dạng nước
+│   ├── test_quality.py                   # Cảnh báo ảnh mờ/tối/sáng và quality score
+│   └── test_api.py                       # Static UI, model discovery và readiness checkpoint
 │
 ├── .gitignore                            # Loại dataset, weights, runs, outputs và cache khỏi Git
 ├── pyproject.toml                        # Metadata package, dependencies, pytest và Ruff
@@ -304,12 +310,34 @@ Checkpoint tốt nhất nằm tại `runs/detect/vietfood67_yolo11n/weights/best
 
 ## API FastAPI
 
+### Giao diện web để test model
+
+Giao diện upload ảnh được phục vụ trực tiếp bởi FastAPI, không cần cài Node.js. API ưu tiên
+`CALCUCALO_MODEL`; nếu biến này chưa được đặt, hệ thống tự tìm `models/best.onnx`,
+`models/best.pt`, `best.onnx` hoặc `best.pt` theo thứ tự.
+
 ```powershell
-$env:CALCUCALO_MODEL = "models\vietfood57_yolov10m.onnx"
+$env:CALCUCALO_MODEL = "best.pt" # có thể bỏ nếu best.pt/best.onnx nằm ở vị trí tự dò
 $env:CALCUCALO_SEGMENTER = "grabcut" # hoặc sam
 $env:CALCUCALO_COMPONENT_PASS = "true" # crop và phân tích món phức hợp lần hai
 # $env:CALCUCALO_COMPONENT_MODEL = "models\component_detector.pt"
 uvicorn calcucalo.api:app --host 0.0.0.0 --port 8000
+```
+
+Mở `http://localhost:8000`. Giao diện hỗ trợ:
+
+- Upload/drag-drop JPG, PNG, WebP và xem bounding box trên ảnh.
+- Nhập đường kính đĩa hoặc `cm_per_pixel` để hiệu chuẩn.
+- Xem calories, protein, fat, carb và từng component.
+- Sửa gram của component rồi gửi lại để tính tổng dinh dưỡng.
+- Xem cảnh báo chất lượng ảnh, trạng thái checkpoint và JSON đầy đủ.
+
+Các cấu hình inference tùy chọn:
+
+```powershell
+$env:CALCUCALO_CONFIDENCE = "0.25"
+$env:CALCUCALO_IOU = "0.60"
+$env:CALCUCALO_IMAGE_SIZE = "640"
 ```
 
 Gọi API:
@@ -323,7 +351,9 @@ curl.exe -X POST "http://localhost:8000/api/v1/food/analyze" `
 
 API nhận cùng dữ liệu hiệu chỉnh qua trường form `component_overrides_json`, ví dụ `{"VN_COM_TAM":{"Cơm tấm":180}}`. Dùng `response_format=full` để nhận gram/tổng macro sau hiệu chỉnh.
 
-Response gồm `bbox_xyxy`, `mask_polygons`, `detection_confidence`, `weight_g`, khoảng ước lượng, phương pháp và các giả định. Endpoint health là `GET /health`.
+Response gồm `bbox_xyxy`, `mask_polygons`, `detection_confidence`, `image_quality`,
+`weight_g`, khoảng ước lượng, phương pháp và các giả định. Endpoint health là `GET /health`;
+metadata và mức sẵn sàng của checkpoint nằm tại `GET /api/v1/model/info`.
 
 ## Hiệu chuẩn khối lượng cho dữ liệu thật
 

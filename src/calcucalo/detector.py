@@ -15,6 +15,8 @@ from .masks import normalize_mask
 class Detector(Protocol):
     def predict(self, image_rgb: np.ndarray) -> list[Detection]: ...
 
+    def info(self) -> dict[str, object]: ...
+
 
 class UltralyticsDetector:
     """Adapter for PyTorch or ONNX YOLO detect/segment models."""
@@ -40,6 +42,60 @@ class UltralyticsDetector:
         self.iou = iou
         self.image_size = image_size
         self.device = device
+
+    def info(self) -> dict[str, object]:
+        names = getattr(self.model, "names", {}) or {}
+        checkpoint = getattr(self.model, "ckpt", None) or {}
+        train_args = checkpoint.get("train_args") or {}
+        train_metrics = checkpoint.get("train_metrics") or {}
+        metric_keys = (
+            "metrics/precision(B)",
+            "metrics/recall(B)",
+            "metrics/mAP50(B)",
+            "metrics/mAP50-95(B)",
+        )
+        metrics = {
+            key: round(float(train_metrics[key]), 6)
+            for key in metric_keys
+            if train_metrics.get(key) is not None
+        }
+        training = {
+            key: train_args[key]
+            for key in ("model", "epochs", "fraction", "imgsz", "batch")
+            if train_args.get(key) is not None
+        }
+        planned_epochs = train_args.get("epochs")
+        checkpoint_epoch = checkpoint.get("epoch")
+        if isinstance(checkpoint_epoch, (int, float)) and checkpoint_epoch >= 0:
+            completed_epochs = int(checkpoint_epoch) + 1
+            training["completed_epochs"] = completed_epochs
+            if isinstance(planned_epochs, (int, float)) and planned_epochs > 0:
+                training["planned_epochs"] = int(planned_epochs)
+                training["training_complete"] = completed_epochs >= int(planned_epochs)
+        elif (
+            checkpoint_epoch == -1
+            and checkpoint.get("optimizer") is None
+            and isinstance(planned_epochs, (int, float))
+            and planned_epochs > 0
+        ):
+            # Ultralytics strips the optimizer and writes epoch=-1 after a completed run.
+            training["completed_epochs"] = int(planned_epochs)
+            training["planned_epochs"] = int(planned_epochs)
+            training["training_complete"] = True
+        return {
+            "backend": "ultralytics",
+            "format": Path(self.model_path).suffix.casefold().lstrip("."),
+            "model_file": Path(self.model_path).name,
+            "task": str(getattr(self.model, "task", "detect")),
+            "class_count": len(names),
+            "classes": {str(key): str(value) for key, value in dict(names).items()},
+            "confidence_threshold": self.confidence,
+            "iou_threshold": self.iou,
+            "image_size": self.image_size,
+            "device": "auto" if self.device is None else str(self.device),
+            "training": training,
+            "metrics": metrics,
+        }
 
     def predict(self, image_rgb: np.ndarray) -> list[Detection]:
         # Ultralytics interprets NumPy arrays as OpenCV/BGR images.
@@ -122,7 +178,8 @@ class OnnxYoloDetector:
             if requested_gpu
             else ["CPUExecutionProvider"]
         )
-        self.session = ort.InferenceSession(str(model_path), providers=providers)
+        self.model_path = str(model_path)
+        self.session = ort.InferenceSession(self.model_path, providers=providers)
         model_input = self.session.get_inputs()[0]
         self.input_name = model_input.name
         self.input_dtype = np.float16 if "float16" in model_input.type else np.float32
@@ -135,6 +192,36 @@ class OnnxYoloDetector:
         self.confidence = confidence
         self.iou = iou
         self.names = self._load_names(classes_path)
+
+    def info(self) -> dict[str, object]:
+        metadata = self.session.get_modelmeta().custom_metadata_map
+        training: dict[str, object] = {}
+        embedded_args = metadata.get("args")
+        if embedded_args:
+            try:
+                parsed = ast.literal_eval(embedded_args)
+                if isinstance(parsed, dict):
+                    training = {
+                        key: parsed[key]
+                        for key in ("model", "epochs", "fraction", "imgsz", "batch")
+                        if parsed.get(key) is not None
+                    }
+            except (SyntaxError, ValueError):
+                pass
+        return {
+            "backend": "onnxruntime",
+            "format": "onnx",
+            "model_file": Path(self.model_path).name,
+            "task": metadata.get("task", "detect"),
+            "class_count": len(self.names),
+            "classes": {str(key): value for key, value in self.names.items()},
+            "confidence_threshold": self.confidence,
+            "iou_threshold": self.iou,
+            "image_size": [self.input_height, self.input_width],
+            "device": self.session.get_providers()[0],
+            "training": training,
+            "metrics": {},
+        }
 
     def _load_names(self, classes_path: str | Path | None) -> dict[int, str]:
         metadata = self.session.get_modelmeta().custom_metadata_map

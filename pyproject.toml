@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "calcucalo-vision"
-version = "0.3.0"
+version = "0.4.0"
 description = "Vietnamese food detection, segmentation and portion-estimation baseline"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -42,6 +42,9 @@ calcucalo = "calcucalo.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+calcucalo = ["web/*.html", "web/assets/*.css", "web/assets/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

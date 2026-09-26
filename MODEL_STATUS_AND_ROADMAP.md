@@ -1,21 +1,102 @@
 # Báo cáo trạng thái model CalcuCalo Vision
 
-Phiên bản mới nhất: **0.3.0**
+Phiên bản mới nhất: **0.4.0**
 
-Ngày sắp xếp lịch sử phiên bản: **25/09/2026**
+Ngày cập nhật báo cáo gần nhất: **26/09/2026**
 
 ## Danh sách phiên bản
 
 | Phiên bản | Ngày báo cáo | Trạng thái | Nội dung nổi bật |
 |---|---|---|---|
-| [0.3.0](#phiên-bản-030--hiện-tại) | 21/09/2026 | Hiện tại | Calculation trace, user correction, schema, catalog QA và evaluation |
+| [0.4.0](#phiên-bản-040--hiện-tại) | 26/09/2026 | Hiện tại | Web UI, kiểm tra ảnh, readiness theo tiến độ train và cấu hình thí nghiệm detector |
+| [0.3.0](#phiên-bản-030--lưu-trữ) | 26/09/2026 | Lưu trữ + hậu kiểm | Calculation trace và checkpoint VietFood67 15/20 epoch |
 | [0.2.0](#phiên-bản-020--lưu-trữ) | 21/09/2026 | Lưu trữ | Baseline end-to-end đầu tiên cho detection, portion và nutrition |
 
 Quy ước cập nhật: phiên bản mới luôn được thêm lên trên; nội dung phiên bản cũ được giữ lại bên dưới để có thể đối chiếu thay đổi theo thời gian.
 
 ---
 
-## Phiên bản 0.3.0 — hiện tại
+## Phiên bản 0.4.0 — hiện tại
+
+Ngày cập nhật: 26/09/2026<br>
+Phiên bản mã nguồn: 0.4.0
+
+### Thay đổi so với 0.3.0
+
+- Thêm giao diện web responsive chạy trực tiếp cùng FastAPI, không cần Node.js/React.
+- Cho phép upload hoặc kéo thả ảnh, chọn cách hiệu chuẩn, phủ bounding box, xem calories/macro/component và JSON đầy đủ.
+- Cho phép sửa gram từng component trên giao diện rồi gọi lại pipeline để tính dinh dưỡng.
+- Tự tìm `best.onnx`/`best.pt` trong `models/`, root hoặc cấu trúc run `*/weights/`; vẫn ưu tiên biến `CALCUCALO_MODEL`.
+- Thêm endpoint `GET /api/v1/model/info` để đọc class, tham số train, metric và đánh giá readiness của checkpoint.
+- Thêm kiểm tra độ phân giải, độ nét và độ sáng của ảnh; kết quả nằm trong `image_quality` và cảnh báo người dùng chụp lại khi cần.
+- Cho phép cấu hình `confidence`, IoU và kích thước inference bằng biến môi trường.
+- Đọc số epoch đã hoàn thành trực tiếp từ checkpoint và trả trạng thái `training_incomplete` nếu run bị dừng trước kế hoạch.
+- Bổ sung tham số `--fraction`, `--mosaic`, `--close-mosaic` và `--save-period` cho `scripts/train_detector.py` để cấu hình và tái lập thí nghiệm detector v4.
+
+### 1. Model hiện tại làm được gì
+
+Pipeline vẫn đi theo hướng **detection → segmentation/mask → hiệu chuẩn → ước lượng khẩu phần → recipe/component → calories và macro**. Phiên bản này bổ sung lớp kiểm soát đầu vào và giao diện để kiểm thử toàn bộ pipeline, thay vì thay đổi kiến trúc detector.
+
+Checkpoint mới tại `vietfood67_yolo11n_v1/weights/best.pt` được nhận diện đúng 68 lớp và đã dùng 100% tập train. Tuy nhiên metadata cho thấy run mới hoàn thành **15/20 epoch**, nên v4 đánh dấu nó là `training_incomplete`, chưa coi là detector candidate. Ở epoch 15, validation đạt precision **0,7757**, recall **0,7106**, mAP50 **0,7782** và mAP50–95 **0,6254**; đây là kết quả phát triển tốt nhưng chưa phải đánh giá cuối cùng.
+
+### 2. Các cải thiện đã áp dụng sau rà soát
+
+| Điểm yếu phát hiện | Cập nhật trong 0.4.0 | Tác dụng |
+|---|---|---|
+| Người dùng khó thử model | Web UI tích hợp FastAPI | Upload ảnh và xem kết quả ngay trên trình duyệt |
+| Ảnh mờ/tối/góc xấu dễ tạo kết quả thiếu tin cậy | `quality.py` chấm quality và trả hướng dẫn | Chặn kỳ vọng sai, hướng người dùng chụp lại |
+| Không rõ API đang nạp checkpoint nào | Auto-discovery + model info | Hiện file, backend, số lớp, metric và cấu hình train |
+| Checkpoint dừng giữa chừng vẫn có mAP cao và bị gọi là candidate | Đọc `completed_epochs`/`planned_epochs` từ `.pt` | Trả `training_incomplete` cho checkpoint v3 đang ở 15/20 epoch |
+| Detector tốt có thể bị hiểu là toàn hệ thống đã production | Tách `detector_candidate` khỏi `production_ready` | Chỉ detector được đánh dấu candidate; pipeline vẫn cần đánh giá gram/calories |
+| Ngưỡng inference bị cố định | Biến môi trường confidence/IoU/image size | Dễ hiệu chỉnh trên validation set mà không sửa code |
+| Script train khó kiểm soát augmentation | Thêm tùy chọn mosaic/fraction/checkpoint period | Cho phép chạy thí nghiệm v4 có cấu hình rõ ràng và tái lập được |
+
+### 3. Việc cần làm tiếp theo
+
+1. Resume chính checkpoint v3 từ epoch 15 đến hết epoch 20; không đổi augmentation hoặc learning-rate giữa một lần resume.
+2. Chạy đánh giá riêng trên `split=test` với `plots=True`, lưu confusion matrix, PR/F1 curve, AP từng lớp và ảnh dự đoán. Folder hiện tại chưa có các artifact này nên chưa thể kết luận lớp nào tốt hoặc yếu.
+3. Chỉ sau bước 2 mới chép checkpoint được chọn vào `models/best.pt` hoặc `models/best.onnx`; trước đó nên cấu hình rõ `CALCUCALO_MODEL` để tránh nạp nhầm model cũ.
+4. Chạy một thí nghiệm v4 độc lập với `mosaic=0.0`. Nhiều ảnh nguồn đã là collage 2×2; thêm YOLO mosaic tạo “collage của collage”, làm vật thể nhỏ và lệch phân phối so với ảnh điện thoại. So sánh v4 với v3 trên cùng test set, seed và 20 epoch trước khi quyết định.
+5. Chưa bỏ lớp 27 `Con nguoi` trực tiếp khỏi YAML hiện tại vì sẽ làm lệch toàn bộ class ID phía sau. Nếu tạo model chỉ có thực phẩm, phải sinh dataset/YAML 67 lớp đã remap và cập nhật class map đồng bộ.
+6. Chọn confidence theo precision–recall trên validation/test, sau đó kiểm tra thêm bằng ảnh điện thoại thật, ảnh một món không ghép và góc chụp xấu.
+7. Thu thập ảnh có cân gram, marker và component mask để chạy `evaluate_pipeline.py`; mAP detector không đo độ chính xác khối lượng hoặc calories.
+8. Chỉ đặt `production_ready=true` sau khi detector, portion và nutrition đều đạt tiêu chí trên tập đánh giá độc lập.
+
+### 4. Cấu hình thí nghiệm detector v4 đề xuất
+
+Ưu tiên hoàn tất và đánh giá v3 trước. Sau đó chạy v4 thành một run mới từ cùng pretrained checkpoint để phép so sánh có ý nghĩa:
+
+```powershell
+python scripts/train_detector.py `
+  --data configs/vietfood67.yaml `
+  --model yolo11n.pt `
+  --epochs 20 `
+  --image-size 640 `
+  --batch 32 `
+  --device 0,1 `
+  --workers 4 `
+  --patience 20 `
+  --mosaic 0.0 `
+  --close-mosaic 0 `
+  --save-period 1 `
+  --name vietfood67_yolo11n_v4_no_mosaic
+```
+
+Không nên đồng thời đổi sang YOLO11s, tăng epoch và đổi augmentation trong cùng lần thử đầu tiên, vì khi đó không xác định được thay đổi nào tạo ra cải thiện. Nếu v4 không mosaic tốt hơn v3 trên test và ảnh thật, bước kế tiếp mới so sánh YOLO11s.
+
+### 5. Cách chạy giao diện
+
+```powershell
+pip install -e ".[all]"
+$env:CALCUCALO_MODEL = "vietfood67_yolo11n_v1/weights/best.pt"
+uvicorn calcucalo.api:app --host 127.0.0.1 --port 8000
+```
+
+Mở `http://127.0.0.1:8000`. Metadata model nằm ở `http://127.0.0.1:8000/api/v1/model/info`.
+
+---
+
+## Phiên bản 0.3.0 — lưu trữ
 
 Ngày cập nhật: 21/09/2026  
 Phiên bản mã nguồn: 0.3.0
@@ -38,13 +119,68 @@ Hệ thống **chưa phải model dinh dưỡng đã được kiểm định**. 
 - `visual_metric_estimate`: thành phần được phát hiện và ảnh có tỷ lệ mét để ước lượng khối lượng.
 - `catalog_prior`: thành phần suy ra từ công thức chuẩn, chưa được nhìn thấy trực tiếp.
 
+### 1.1. Hậu kiểm checkpoint detector được train cho v3
+
+Ngày hậu kiểm: 26/09/2026<br>
+Nguồn artifact: `vietfood67_yolo11n_v1/`
+
+#### Cấu hình đã xác minh
+
+| Thuộc tính | Giá trị |
+|---|---:|
+| Kiến trúc | YOLO11n detect |
+| Số lớp | 68 |
+| Dữ liệu sử dụng | 100% (`fraction=1.0`) |
+| Kích thước ảnh | 640 |
+| Batch | 32 |
+| GPU | `0,1` |
+| Kế hoạch | 20 epoch |
+| Đã hoàn thành | **15 epoch** |
+| Augmentation | `mosaic=1.0`, `close_mosaic=10` |
+| Seed/deterministic | `42` / `true` |
+
+Checkpoint `best.pt`, `last.pt` và `epoch14.pt` có cùng SHA-256 và cùng metric, cho thấy epoch 15 là epoch tốt nhất hiện có. Optimizer vẫn còn trong checkpoint nên có thể resume tiếp đến epoch 20.
+
+#### Kết quả validation
+
+| Chỉ số | Epoch 1 | Epoch 7 | Epoch 15 | Thay đổi epoch 1 → 15 |
+|---|---:|---:|---:|---:|
+| Precision | 0,4613 | 0,7284 | **0,7757** | +0,3144 |
+| Recall | 0,3751 | 0,6193 | **0,7106** | +0,3355 |
+| mAP50 | 0,3637 | 0,6961 | **0,7782** | +0,4145 |
+| mAP50–95 | 0,2609 | 0,5446 | **0,6254** | +0,3645 |
+| Train box loss | 0,8635 | 0,7257 | **0,6337** | −0,2298 |
+| Validation box loss | 0,9982 | 0,8096 | **0,7447** | −0,2535 |
+
+Tổng thời gian của hai session train được ghi trong `results.csv` khoảng **7 giờ 05 phút**, trung bình khoảng **28,4 phút/epoch**. Các metric vẫn tăng và train/validation loss vẫn giảm ở epoch 15, nên chưa có bằng chứng model đã hội tụ hoặc overfit. Chênh lệch precision–recall còn khoảng 6,5 điểm phần trăm; model vẫn bỏ sót nhiều hơn mức nó dự đoán sai.
+
+#### Điểm tốt
+
+- Detector đã học đủ 68 class ID trên toàn bộ tập train, không còn là smoke test 1%.
+- mAP50–95 tăng liên tục từ 0,2609 lên 0,6254; chưa xuất hiện suy giảm validation ở các epoch cuối đã lưu.
+- Sau khi mosaic được đóng ở giai đoạn cuối, metric tiếp tục cải thiện; đây là tín hiệu đáng để kiểm chứng bằng thí nghiệm v4 không mosaic, nhưng chưa đủ để khẳng định quan hệ nhân quả.
+- Checkpoint có đầy đủ optimizer state để tiếp tục train, không phải chạy lại từ đầu.
+
+#### Điểm chưa đủ và rủi ro
+
+- Run mới dừng ở 15/20 epoch. Không gọi đây là kết quả cuối hoặc detector candidate cho đến khi hoàn tất và đánh giá lại.
+- Folder không có `results.png`, confusion matrix, PR/F1 curve, `val_batch*_pred.jpg` hoặc báo cáo AP từng lớp. Vì vậy mAP tổng chưa cho biết món nào đang yếu.
+- `labels.jpg` cho thấy mất cân bằng lớp đáng kể; class 27 `Con nguoi` là lớp lớn nhất và không phải thực phẩm. Pipeline đã loại class này khỏi kết quả dinh dưỡng, nhưng detector vẫn phải dùng năng lực để học nó.
+- Phân bố tâm bbox tạo bốn cụm rõ ở bốn góc. Kiểm tra ảnh batch xác nhận nhiều ảnh nguồn vốn đã là collage 2×2; dùng thêm `mosaic=1.0` có thể làm vật thể quá nhỏ và khác ảnh chụp một món thực tế.
+- Đây chỉ là metric detection trên validation của VietFood67. Nó không đánh giá mask thành phần, chiều sâu, gram, calories hoặc khả năng tổng quát trên ảnh điện thoại ngoài dataset.
+
+#### Kết luận cho v3
+
+Checkpoint hiện tại là **development checkpoint tốt nhưng chưa hoàn tất**. Nó đủ để thử inference và tiếp tục train, nhưng chưa đủ bằng chứng để phát hành. Quyết định giữ model cần dựa trên epoch 20, test split độc lập, AP từng lớp và một bộ ảnh điện thoại thật.
+
 ### 2. Những gì model đã có
 
 | Khối | Trạng thái | Cách hoạt động |
 |---|---|---|
 | Tiền xử lý ảnh | Đã có | Đọc JPG/PNG/WebP, sửa EXIF orientation, chuẩn hóa RGB |
 | Nhận diện món | Đã có | YOLO `.pt` qua Ultralytics hoặc `.onnx` qua ONNX Runtime |
-| Model chạy thử | Đã có | Checkpoint YOLOv10m công khai, 58 lớp của bản dữ liệu cũ |
+| Checkpoint detector v3 | Đang train | YOLO11n, đúng 68 lớp, 100% dữ liệu, hiện hoàn thành 15/20 epoch |
+| Model chạy thử cũ | Lưu trữ | Checkpoint YOLOv10m công khai, 58 lớp của bản dữ liệu cũ |
 | Cấu hình VietFood67 | Đã có | Đủ 68 class ID, gồm 67 món và lớp người |
 | Train model mới | Đã có code | Validator dataset, train YOLO11, resume, export ONNX |
 | Bóc tách món | Đã có | Mask từ YOLO-seg; nếu là detection model thì dùng SAM 2 hoặc GrabCut |
@@ -164,10 +300,12 @@ response_format=nutrition
 
 ### 5. Mức chính xác hiện tại
 
-Chưa có đủ bằng chứng để công bố một con số accuracy end-to-end cho mã nguồn này:
+Đã có số liệu validation cho detector v3 ở epoch 15: precision **0,7757**, recall **0,7106**, mAP50 **0,7782** và mAP50–95 **0,6254**. Đây là metric detection trên VietFood67, không phải “độ chính xác calories” của toàn pipeline.
 
-1. Checkpoint ONNX công khai đang dùng để smoke test chỉ có 58 lớp, không phải checkpoint 68 lớp mới được train bởi dự án này.
-2. Chưa tải và train toàn bộ VietFood67 trong workspace hiện tại.
+Vẫn chưa có đủ bằng chứng để công bố một con số accuracy end-to-end vì:
+
+1. Run detector chưa hoàn thành 20 epoch và chưa có báo cáo riêng trên test split.
+2. Chưa có AP từng lớp, confusion matrix và bộ ảnh điện thoại ngoài VietFood67 để đo domain shift.
 3. Chưa có test set chứa khối lượng cân thật và component mask.
 4. Giá trị trong `food_catalog.json` hiện là **seed estimate cho phát triển phần mềm**. Chúng chưa được chuyên gia dinh dưỡng duyệt và không nên dùng cho quyết định y tế.
 
@@ -175,21 +313,23 @@ Các unit test chứng minh contract và thuật toán chạy đúng theo thiế
 
 ### 6. Những điểm cần cải thiện và cách cải thiện
 
-#### P0 — Train checkpoint VietFood67 đủ 68 lớp
+#### P0 — Hoàn tất và kiểm định checkpoint VietFood67 68 lớp
 
-Mục tiêu: thay checkpoint demo 58 lớp.
+Tiến độ: đã thay smoke test bằng checkpoint YOLO11n học trên 100% dữ liệu, nhưng mới đạt 15/20 epoch.
 
-1. Tải VietFood67 và chạy validator để tìm ảnh thiếu nhãn, class ID sai và tọa độ ngoài `[0,1]`.
+1. Resume `last.pt` đến hết epoch 20 và giữ nguyên cấu hình của run.
 2. Kiểm tra trùng ảnh giữa train/val/test bằng perceptual hash; ảnh gần trùng làm mAP bị ảo.
-3. Train lần lượt YOLO11n và YOLO11s; chỉ dùng YOLO11m khi GPU và latency cho phép.
-4. Báo cáo AP theo từng lớp, confusion matrix và lỗi theo góc chụp/quán ăn, không chỉ báo cáo mAP chung.
-5. Export ONNX và so sánh output `.pt`/`.onnx` trên cùng bộ golden images.
+3. Báo cáo AP theo từng lớp, confusion matrix và lỗi theo góc chụp/quán ăn, không chỉ báo cáo mAP chung.
+4. Export ONNX và so sánh output `.pt`/`.onnx` trên cùng bộ golden images.
+5. Sau baseline YOLO11n, so sánh lần lượt no-mosaic rồi YOLO11s; không đổi cả hai biến trong cùng thí nghiệm.
 
-Lệnh khởi đầu:
+Lệnh resume trên Kaggle:
 
-```powershell
-calcucalo prepare-dataset data\raw\vietfood67
-python scripts\train_detector.py --data configs\vietfood67.yaml --model yolo11s.pt --epochs 150 --device 0 --export-onnx
+```python
+from ultralytics import YOLO
+
+model = YOLO("/kaggle/working/runs/detect/vietfood67_yolo11n_v1/weights/last.pt")
+model.train(resume=True)
 ```
 
 #### P1 — Tạo dataset component-level

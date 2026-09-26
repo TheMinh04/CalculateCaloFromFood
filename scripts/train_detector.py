@@ -12,6 +12,13 @@ def parse_batch(value: str) -> int | float:
     return int(parsed) if parsed.is_integer() else parsed
 
 
+def unit_interval(value: str) -> float:
+    parsed = float(value)
+    if not 0.0 <= parsed <= 1.0:
+        raise argparse.ArgumentTypeError("value must be between 0 and 1")
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fine-tune YOLO detection on VietFood67")
     parser.add_argument("--data", required=True, help="Prepared VietFood67 data YAML")
@@ -22,6 +29,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", default=None, help="cpu, mps, 0 or comma-separated CUDA indices")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--patience", type=int, default=20)
+    parser.add_argument("--fraction", type=unit_interval, default=1.0)
+    parser.add_argument(
+        "--mosaic",
+        type=unit_interval,
+        default=1.0,
+        help="Probability of Ultralytics mosaic augmentation; use 0 for already-collaged data",
+    )
+    parser.add_argument("--close-mosaic", type=int, default=10)
+    parser.add_argument("--save-period", type=int, default=1)
     parser.add_argument("--project", default="runs/detect")
     parser.add_argument("--name", default="vietfood67_yolo11n")
     parser.add_argument("--resume", action="store_true")
@@ -68,6 +84,10 @@ def main() -> int:
             device=args.device,
             workers=args.workers,
             patience=args.patience,
+            fraction=args.fraction,
+            mosaic=args.mosaic,
+            close_mosaic=args.close_mosaic,
+            save_period=args.save_period,
             project=args.project,
             name=args.name,
             pretrained=True,

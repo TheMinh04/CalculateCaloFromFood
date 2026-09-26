@@ -13,3 +13,9 @@ models/*.pt
 models/*.onnx
 runs/
 outputs/
+output/
+.playwright-cli/
+/best.pt
+/last.pt
+/vietfood67.yaml
+/vietfood67_yolo11n_v1/

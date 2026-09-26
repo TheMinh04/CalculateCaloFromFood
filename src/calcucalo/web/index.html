@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Giao diện thử nghiệm CalcuCalo Vision" />
+    <title>CalcuCalo Vision Lab</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2218%22 fill=%22%23c6e95d%22/><text x=%2232%22 y=%2243%22 text-anchor=%22middle%22 font-size=%2238%22 font-family=%22serif%22 fill=%22%23133c2d%22>C</text></svg>" />
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="CalcuCalo trang chủ">
+        <span class="brand-mark" aria-hidden="true">C</span>
+        <span>
+          <strong>CalcuCalo</strong>
+          <small>Vision Lab</small>
+        </span>
+      </a>
+      <div class="runtime-status" id="runtimeStatus" role="status">
+        <span class="status-dot"></span>
+        <span>Đang kiểm tra model...</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">AI DINH DƯỠNG MÓN VIỆT</p>
+          <h1><span class="hero-title-main">Từ một bức ảnh đến</span><em>bức tranh dinh dưỡng.</em></h1>
+          <p class="hero-copy">
+            Tải ảnh món ăn, nhận diện thành phần, ước lượng khẩu phần và xem rõ từng bước
+            tính calories — cùng giới hạn của kết quả.
+          </p>
+        </div>
+        <div class="hero-facts" aria-label="Thông tin pipeline">
+          <div><strong>68</strong><span>lớp VietFood</span></div>
+          <div><strong>4</strong><span>chỉ số macro</span></div>
+          <div><strong>100%</strong><span>trace phép tính</span></div>
+        </div>
+      </section>
+
+      <section class="model-banner" id="modelBanner" hidden></section>
+
+      <section class="workspace">
+        <form class="control-panel" id="analysisForm">
+          <div class="section-heading">
+            <span>01</span>
+            <div>
+              <h2>Ảnh món ăn</h2>
+              <p>Ưu tiên góc gần vuông, đủ sáng và thấy trọn đĩa.</p>
+            </div>
+          </div>
+
+          <label class="dropzone" id="dropzone" for="imageInput">
+            <input id="imageInput" type="file" accept="image/jpeg,image/png,image/webp" />
+            <span class="upload-icon" aria-hidden="true">↑</span>
+            <strong id="dropTitle">Thả ảnh vào đây</strong>
+            <span id="dropHint">hoặc bấm để chọn JPG, PNG, WebP · tối đa 15 MB</span>
+          </label>
+
+          <div class="section-heading compact">
+            <span>02</span>
+            <div>
+              <h2>Hiệu chuẩn kích thước</h2>
+              <p>Có vật chuẩn giúp ước lượng gram tốt hơn.</p>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <label class="field">
+              <span>Phương pháp</span>
+              <select id="calibrationMode">
+                <option value="none">Không có vật chuẩn</option>
+                <option value="plate">Đường kính đĩa/bát</option>
+                <option value="scale">Tỷ lệ cm trên pixel</option>
+              </select>
+            </label>
+            <label class="field">
+              <span id="calibrationLabel">Giá trị</span>
+              <div class="number-field">
+                <input id="calibrationValue" type="number" min="0.000001" step="any" disabled />
+                <span id="calibrationUnit">—</span>
+              </div>
+            </label>
+          </div>
+
+          <button class="analyze-button" id="analyzeButton" type="submit" disabled>
+            <span>Phân tích món ăn</span>
+            <span aria-hidden="true">→</span>
+          </button>
+          <p class="form-message" id="formMessage" role="alert"></p>
+        </form>
+
+        <section class="preview-panel" aria-label="Xem trước ảnh">
+          <div class="preview-header">
+            <div>
+              <span class="panel-kicker">LIVE PREVIEW</span>
+              <h2>Vùng model nhìn thấy</h2>
+            </div>
+            <span class="detection-count" id="detectionCount">Chưa phân tích</span>
+          </div>
+          <div class="preview-canvas" id="previewCanvas">
+            <div class="preview-empty" id="previewEmpty">
+              <span class="plate-illustration" aria-hidden="true"></span>
+              <p>Ảnh và bounding box sẽ xuất hiện ở đây.</p>
+            </div>
+            <div class="preview-stage" id="previewStage" hidden>
+              <img id="previewImage" alt="Ảnh món ăn đã chọn" />
+              <svg id="overlay" aria-label="Các vùng món ăn được phát hiện"></svg>
+            </div>
+            <div class="loading-overlay" id="loadingOverlay" hidden>
+              <span class="spinner"></span>
+              <strong>Model đang phân tích...</strong>
+              <small>Detection → segmentation → portion → nutrition</small>
+            </div>
+          </div>
+          <div class="preview-legend">
+            <span><i class="legend-box"></i> Bounding box</span>
+            <span><i class="legend-prior"></i> Ước lượng/prior</span>
+          </div>
+        </section>
+      </section>
+
+      <section class="results" id="resultsSection" hidden>
+        <div class="results-title">
+          <div>
+            <p class="eyebrow">KẾT QUẢ PHÂN TÍCH</p>
+            <h2>Dinh dưỡng ước tính</h2>
+          </div>
+          <span id="qualityBadge" class="quality-badge"></span>
+        </div>
+
+        <div class="macro-grid" id="macroGrid"></div>
+        <div class="quality-panel" id="qualityPanel"></div>
+        <div class="warning-panel" id="warningPanel" hidden></div>
+        <div class="food-list" id="foodList"></div>
+
+        <div class="correction-bar" id="correctionBar" hidden>
+          <div>
+            <strong>Khối lượng thực tế khác?</strong>
+            <span>Sửa số gram trong bảng rồi yêu cầu hệ thống tính lại.</span>
+          </div>
+          <button type="button" id="recalculateButton">Tính lại theo gram đã sửa</button>
+        </div>
+
+        <details class="json-panel">
+          <summary>Xem JSON đầy đủ</summary>
+          <pre id="jsonOutput"></pre>
+        </details>
+      </section>
+    </main>
+
+    <footer>
+      <p>CalcuCalo Vision · Kết quả là ước tính, không thay thế tư vấn của chuyên gia dinh dưỡng.</p>
+      <a href="/docs" target="_blank" rel="noreferrer">API docs ↗</a>
+    </footer>
+
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>
